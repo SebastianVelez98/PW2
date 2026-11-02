@@ -1,0 +1,134 @@
+### ==============================================================================
+### Colección de Pruebas HTTP para la API de Gestión de Inventario
+### Compatible con: VS Code REST Client / Thunder Client / Postman
+### Servidor base: http://localhost:3000
+### ==============================================================================
+
+@baseUrl = http://localhost:3000/api
+
+### ------------------------------------------------------------------------------
+### 1. AUTENTICACIÓN Y SESIONES
+### ------------------------------------------------------------------------------
+
+### 1.1 Iniciar Sesión con Credenciales de Administrador (Guarda Cookie Automáticamente)
+# @name loginAdmin
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "username": "admin",
+  "password": "admin123"
+}
+
+### 1.2 Consultar Usuario Activo en Sesión (Requiere estar logueado)
+GET {{baseUrl}}/auth/me
+
+### 1.3 Intentar Login con Credenciales Erróneas (Esperado: 401 Unauthorized)
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "username": "admin",
+  "password": "clave_equivocada"
+}
+
+### ------------------------------------------------------------------------------
+### 2. GESTIÓN DE PRODUCTOS (CRUD)
+### ------------------------------------------------------------------------------
+
+### 2.1 Listar Todos los Productos y Métricas Globales (Público, 200 OK)
+GET {{baseUrl}}/productos
+
+### 2.2 Listar Filtrando por Búsqueda y Categoría
+GET {{baseUrl}}/productos?busqueda=Teclado&categoria=Periféricos
+
+### 2.3 Crear Producto #1 (Con Stock Normal, Requiere Sesión, 201 Created)
+# Emite evento en Socket.io: "producto:creado"
+POST {{baseUrl}}/productos
+Content-Type: application/json
+
+{
+  "sku": "TEC-MEC-RGB",
+  "nombre": "Teclado Mecánico Switch Red",
+  "descripcion": "Teclado gamer 75% con iluminación RGB y switch mecánico suave",
+  "categoria": "Periféricos",
+  "precio": 89.99,
+  "stock": 18
+}
+
+### 2.4 Crear Producto #2 con Stock Crítico (Menor a 5 unidades)
+# Emite eventos en Socket.io: "producto:creado" y "alerta:stock_bajo"
+POST {{baseUrl}}/productos
+Content-Type: application/json
+
+{
+  "sku": "MON-4K-144HZ",
+  "nombre": "Monitor Gamer 27 pulgadas 4K 144Hz",
+  "descripcion": "Monitor panel IPS con HDR600 y tiempo de respuesta 1ms",
+  "categoria": "Monitores",
+  "precio": 450.00,
+  "stock": 3
+}
+
+### 2.5 Intentar Crear Producto Duplicando SKU (Esperado: 409 Conflict)
+POST {{baseUrl}}/productos
+Content-Type: application/json
+
+{
+  "sku": "TEC-MEC-RGB",
+  "nombre": "Teclado Clon Duplicado",
+  "descripcion": "Intento de registro con SKU existente",
+  "categoria": "Periféricos",
+  "precio": 79.99,
+  "stock": 5
+}
+
+### 2.6 Intentar Crear Producto con Datos Inválidos Zod (Esperado: 400 Bad Request)
+POST {{baseUrl}}/productos
+Content-Type: application/json
+
+{
+  "sku": "A",
+  "nombre": "",
+  "categoria": "X",
+  "precio": -20,
+  "stock": -5
+}
+
+### 2.7 Obtener Producto por ID Existente (200 OK)
+GET {{baseUrl}}/productos/1
+
+### 2.8 Obtener Producto por ID Inexistente (Esperado: 404 Not Found)
+GET {{baseUrl}}/productos/99999
+
+### 2.9 Actualizar Producto (Modificar Precio y Bajar Stock a 2 unidades)
+# Emite eventos en Socket.io: "producto:actualizado" y "alerta:stock_bajo"
+PUT {{baseUrl}}/productos/1
+Content-Type: application/json
+
+{
+  "sku": "TEC-MEC-RGB",
+  "nombre": "Teclado Mecánico Switch Red (Oferta Flash)",
+  "descripcion": "Últimas unidades en liquidación",
+  "categoria": "Periféricos",
+  "precio": 69.99,
+  "stock": 2
+}
+
+### 2.10 Exportar Catálogo a Formato CSV (200 OK, Descarga de archivo)
+GET {{baseUrl}}/productos/exportar/csv
+
+### 2.11 Eliminar Producto por ID (Requiere Sesión, 200 OK)
+# Emite evento en Socket.io: "producto:eliminado"
+DELETE {{baseUrl}}/productos/1
+
+### ------------------------------------------------------------------------------
+### 3. CIERRE DE SESIÓN Y VERIFICACIÓN DE PROTECCIÓN
+### ------------------------------------------------------------------------------
+
+### 3.1 Cerrar Sesión (Logout, 200 OK)
+POST {{baseUrl}}/auth/logout
+
+### 3.2 Verificar que una operación de mutación es rechazada tras el logout (401 Unauthorized)
+DELETE {{baseUrl}}/productos/2
+

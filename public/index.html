@@ -1,0 +1,946 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sistema de Gestión de Inventario | CRUD & Socket.io</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Font Awesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    @keyframes pulse-subtle {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.03); }
+    }
+    .alerta-subtle {
+      animation: pulse-subtle 2s infinite ease-in-out;
+    }
+    .fade-in {
+      animation: fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col font-sans antialiased selection:bg-indigo-100 selection:text-indigo-800">
+
+  <!-- ========================================================================= -->
+  <!-- BARRA DE NAVEGACIÓN SUPERIOR (TEMA BLANCO ELEGANTE)                       -->
+  <!-- ========================================================================= -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      
+      <!-- Marca / Logo -->
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-md shadow-indigo-200">
+          <i class="fa-solid fa-boxes-stacked text-lg"></i>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="font-bold text-slate-900 text-base sm:text-lg leading-tight">InventarioPro</h1>
+            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 uppercase tracking-wide">REST + Socket.io</span>
+          </div>
+          <p class="text-xs text-slate-500">Panel CRUD en Tiempo Real &middot; Clean Architecture</p>
+        </div>
+      </div>
+
+      <!-- Acciones de Cabecera: Socket + Sesión + Exportar -->
+      <div class="flex items-center gap-2 sm:gap-3">
+        
+        <!-- Estado Socket.io -->
+        <div id="socket-badge" class="px-2.5 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 bg-amber-50 text-amber-700 border border-amber-200">
+          <span class="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span>
+          <span class="hidden sm:inline">Conectando...</span>
+        </div>
+
+        <!-- Descargar CSV -->
+        <a href="/api/productos/exportar/csv" download class="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg shadow-2xs transition flex items-center gap-1.5">
+          <i class="fa-solid fa-file-csv text-emerald-600"></i>
+          <span class="hidden sm:inline">Exportar</span> CSV
+        </a>
+
+        <!-- Área de Autenticación / Sesión -->
+        <div id="auth-container">
+          <!-- Renderizado dinámico vía JavaScript -->
+          <button id="btn-open-login" class="px-3.5 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-xs transition flex items-center gap-1.5">
+            <i class="fa-solid fa-right-to-bracket"></i> Iniciar Sesión
+          </button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ========================================================================= -->
+  <!-- CONTENIDO PRINCIPAL                                                       -->
+  <!-- ========================================================================= -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 flex-1 w-full space-y-6">
+
+    <!-- Tarjetas de Métricas Estadísticas (En blanco limpio) -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      
+      <!-- Total Productos -->
+      <div class="bg-white border border-slate-200 p-4 sm:p-5 rounded-xl shadow-xs">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-xs font-medium text-slate-500 uppercase tracking-wider">Productos</p>
+            <h3 id="stat-total-productos" class="text-2xl sm:text-3xl font-extrabold text-slate-900 mt-1">0</h3>
+          </div>
+          <div class="w-10 h-10 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+            <i class="fa-solid fa-box text-base"></i>
+          </div>
+        </div>
+      </div>
+
+      <!-- Total Unidades en Stock -->
+      <div class="bg-white border border-slate-200 p-4 sm:p-5 rounded-xl shadow-xs">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-xs font-medium text-slate-500 uppercase tracking-wider">Stock Total</p>
+            <h3 id="stat-total-unidades" class="text-2xl sm:text-3xl font-extrabold text-slate-900 mt-1">0</h3>
+          </div>
+          <div class="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+            <i class="fa-solid fa-cubes text-base"></i>
+          </div>
+        </div>
+      </div>
+
+      <!-- Valor Total Monetario -->
+      <div class="bg-white border border-slate-200 p-4 sm:p-5 rounded-xl shadow-xs">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-xs font-medium text-slate-500 uppercase tracking-wider">Valor Inventario</p>
+            <h3 id="stat-valor-total" class="text-2xl sm:text-3xl font-extrabold text-slate-900 mt-1">$0.00</h3>
+          </div>
+          <div class="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+            <i class="fa-solid fa-sack-dollar text-base"></i>
+          </div>
+        </div>
+      </div>
+
+      <!-- Alertas Stock Crítico -->
+      <div class="bg-white border border-slate-200 p-4 sm:p-5 rounded-xl shadow-xs">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-xs font-medium text-slate-500 uppercase tracking-wider">Stock Crítico (&le; 5)</p>
+            <h3 id="stat-stock-bajo" class="text-2xl sm:text-3xl font-extrabold text-rose-600 mt-1">0</h3>
+          </div>
+          <div class="w-10 h-10 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center">
+            <i class="fa-solid fa-triangle-exclamation text-base"></i>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- GRID: TABLA CRUD (2/3) + FEED EN VIVO SOCKET.IO (1/3) -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+      <!-- ===================================================================== -->
+      <!-- SECCIÓN CRUD DE PRODUCTOS (TABLA + BUSCADOR + BOTÓN CREAR)            -->
+      <!-- ===================================================================== -->
+      <div class="lg:col-span-2 bg-white border border-slate-200 rounded-xl shadow-xs flex flex-col overflow-hidden">
+        
+        <!-- Barra de Herramientas Superior del CRUD -->
+        <div class="p-4 sm:p-5 border-b border-slate-200 flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between bg-white">
+          
+          <!-- Título y Contador -->
+          <div>
+            <h2 class="font-bold text-slate-900 text-base flex items-center gap-2">
+              <span>Catálogo de Productos</span>
+              <span id="badge-contador-tabla" class="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">0</span>
+            </h2>
+            <p class="text-xs text-slate-500 mt-0.5">Creación, edición y eliminación en tiempo real</p>
+          </div>
+
+          <!-- Botón "+ Nuevo Producto" -->
+          <div class="flex items-center gap-2">
+            <button id="btn-nuevo-producto" class="px-3.5 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 rounded-lg shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer">
+              <i class="fa-solid fa-plus"></i> Nuevo Producto
+            </button>
+          </div>
+        </div>
+
+        <!-- Barra de Filtros y Búsqueda -->
+        <div class="px-4 py-3 bg-slate-50/70 border-b border-slate-200 flex flex-col sm:flex-row gap-2.5 items-center justify-between text-xs">
+          
+          <!-- Input de Búsqueda -->
+          <div class="relative w-full sm:w-72">
+            <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-400"></i>
+            <input type="text" id="input-busqueda" placeholder="Buscar por SKU o Nombre..." class="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 text-xs transition">
+          </div>
+
+          <!-- Selector de Categoría + Botón Refrescar -->
+          <div class="flex items-center gap-2 w-full sm:w-auto">
+            <select id="select-categoria" class="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 text-xs flex-1 sm:flex-initial">
+              <option value="">Todas las categorías</option>
+            </select>
+
+            <button id="btn-recargar-tabla" title="Recargar tabla" class="p-2 text-slate-600 hover:text-slate-900 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg transition">
+              <i class="fa-solid fa-rotate"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Tabla Responsiva de Productos -->
+        <div class="flex-1 overflow-x-auto min-h-[360px]">
+          <table class="w-full text-left text-xs text-slate-700">
+            <thead class="bg-slate-50 text-slate-500 uppercase tracking-wider text-[11px] font-semibold border-b border-slate-200">
+              <tr>
+                <th class="py-3 px-4">SKU</th>
+                <th class="py-3 px-4">Producto</th>
+                <th class="py-3 px-4">Categoría</th>
+                <th class="py-3 px-4 text-right">Precio</th>
+                <th class="py-3 px-4 text-center">Stock</th>
+                <th class="py-3 px-4 text-center">Estado</th>
+                <th class="py-3 px-4 text-center">Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="tabla-body" class="divide-y divide-slate-100">
+              <tr>
+                <td colspan="7" class="text-center py-12 text-slate-400">
+                  <i class="fa-solid fa-spinner fa-spin text-xl text-indigo-500 mb-2"></i>
+                  <p>Cargando catálogo de productos...</p>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pie de Tabla -->
+        <div class="px-4 py-3 bg-slate-50/80 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500">
+          <span>Rutas mutativas protegidas por sesión</span>
+          <span class="font-mono text-[11px] text-indigo-600 font-semibold"><i class="fa-solid fa-database mr-1"></i> PostgreSQL &middot; Consultas Parametrizadas ($1, $2...)</span>
+        </div>
+      </div>
+
+      <!-- ===================================================================== -->
+      <!-- FEED DE EVENTOS EN TIEMPO REAL (SOCKET.IO)                            -->
+      <!-- ===================================================================== -->
+      <div class="bg-white border border-slate-200 rounded-xl shadow-xs p-4 sm:p-5 flex flex-col h-[580px]">
+        
+        <!-- Cabecera del Feed -->
+        <div class="flex items-center justify-between pb-3 border-b border-slate-200">
+          <div class="flex items-center gap-2">
+            <div class="w-6 h-6 rounded-md bg-amber-50 text-amber-600 flex items-center justify-center text-xs">
+              <i class="fa-solid fa-bolt-lightning"></i>
+            </div>
+            <div>
+              <h3 class="font-bold text-slate-900 text-sm">Streaming Socket.io</h3>
+              <p class="text-[11px] text-slate-500">Eventos en vivo emitidos por el servidor</p>
+            </div>
+          </div>
+          <button id="btn-limpiar-feed" class="text-xs text-slate-400 hover:text-slate-600 transition" title="Limpiar feed">
+            <i class="fa-solid fa-trash-can"></i>
+          </button>
+        </div>
+
+        <!-- Contenedor del Feed de Eventos -->
+        <div id="eventos-feed" class="flex-1 overflow-y-auto space-y-2.5 py-3 pr-1">
+          <div class="p-3 rounded-lg bg-slate-50 border border-slate-200 text-slate-400 text-center text-xs">
+            Esperando transmisiones en vivo de Socket.io...
+          </div>
+        </div>
+
+        <!-- Footer del Feed -->
+        <div class="pt-3 border-t border-slate-200 flex items-center justify-between text-[11px] text-slate-400">
+          <span>Canales: <code class="text-indigo-600 font-semibold">producto:*</code>, <code class="text-rose-600 font-semibold">alerta:*</code></span>
+          <span id="socket-id-label" class="font-mono text-slate-500">-</span>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ========================================================================= -->
+  <!-- MODAL: CREAR / EDITAR PRODUCTO (CRUD COMPLETO)                            -->
+  <!-- ========================================================================= -->
+  <div id="modal-producto" class="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs hidden items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-lg overflow-hidden fade-in">
+      
+      <!-- Cabecera del Modal -->
+      <div class="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/60">
+        <div>
+          <h3 id="modal-titulo" class="font-bold text-slate-900 text-base">Registrar Nuevo Producto</h3>
+          <p class="text-xs text-slate-500">Completa los campos para persistir en SQLite</p>
+        </div>
+        <button id="btn-cerrar-modal-producto" class="text-slate-400 hover:text-slate-600 text-base p-1">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <!-- Formulario del Producto -->
+      <form id="form-producto" class="p-6 space-y-4">
+        <!-- Input ID oculto para edición -->
+        <input type="hidden" id="prod-id" value="">
+
+        <!-- Mensaje de error en el modal -->
+        <div id="modal-alerta-error" class="hidden p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs"></div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <!-- SKU -->
+          <div>
+            <div class="flex items-center justify-between mb-1">
+              <label for="prod-sku" class="block text-xs font-semibold text-slate-700">Código SKU *</label>
+              <button type="button" onclick="document.getElementById('prod-sku').value = generarSkuAleatorio()" class="text-[10px] text-indigo-600 hover:text-indigo-800 font-semibold cursor-pointer">
+                <i class="fa-solid fa-arrows-rotate"></i> Generar
+              </button>
+            </div>
+            <input type="text" id="prod-sku" required placeholder="Ej: TEC-RGB-01" class="w-full px-3 py-2 text-xs uppercase bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 font-mono transition">
+            <span class="text-[10px] text-slate-400">Identificador único</span>
+          </div>
+
+          <!-- Categoría -->
+          <div>
+            <label for="prod-categoria" class="block text-xs font-semibold text-slate-700 mb-1">Categoría *</label>
+            <input type="text" id="prod-categoria" required placeholder="Ej: Periféricos" class="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition">
+          </div>
+        </div>
+
+        <!-- Nombre -->
+        <div>
+          <label for="prod-nombre" class="block text-xs font-semibold text-slate-700 mb-1">Nombre del Producto *</label>
+          <input type="text" id="prod-nombre" required placeholder="Ej: Teclado Mecánico Inalámbrico" class="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition">
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <!-- Precio -->
+          <div>
+            <label for="prod-precio" class="block text-xs font-semibold text-slate-700 mb-1">Precio Unitario ($) *</label>
+            <input type="number" id="prod-precio" step="0.01" min="0.01" required placeholder="89.99" class="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 font-mono transition">
+          </div>
+
+          <!-- Stock -->
+          <div>
+            <label for="prod-stock" class="block text-xs font-semibold text-slate-700 mb-1">Stock Disponible *</label>
+            <input type="number" id="prod-stock" min="0" step="1" required placeholder="10" class="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 font-mono transition">
+            <span class="text-[10px] text-amber-600 font-medium">Si es &le; 5 emitirá alerta en vivo</span>
+          </div>
+        </div>
+
+        <!-- Descripción -->
+        <div>
+          <label for="prod-descripcion" class="block text-xs font-semibold text-slate-700 mb-1">Descripción Opcional</label>
+          <textarea id="prod-descripcion" rows="2" placeholder="Detalles técnicos o notas del producto..." class="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition resize-none"></textarea>
+        </div>
+
+        <!-- Botones de Acción -->
+        <div class="pt-3 border-t border-slate-200 flex items-center justify-end gap-2">
+          <button type="button" id="btn-cancelar-producto" class="px-4 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg transition">
+            Cancelar
+          </button>
+          <button type="submit" id="btn-guardar-producto" class="px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-xs transition flex items-center gap-1.5">
+            <i class="fa-solid fa-floppy-disk"></i> Guardar Producto
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- MODAL: INICIO DE SESIÓN                                                   -->
+  <!-- ========================================================================= -->
+  <div id="modal-login" class="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs hidden items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-sm overflow-hidden fade-in">
+      <div class="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/60">
+        <div>
+          <h3 class="font-bold text-slate-900 text-base">Iniciar Sesión</h3>
+          <p class="text-xs text-slate-500">Requerido para crear, editar o eliminar</p>
+        </div>
+        <button id="btn-cerrar-modal-login" class="text-slate-400 hover:text-slate-600 text-base p-1">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <form id="form-login" class="p-6 space-y-4">
+        <div id="login-error" class="hidden p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs"></div>
+
+        <div>
+          <label for="login-username" class="block text-xs font-semibold text-slate-700 mb-1">Usuario</label>
+          <input type="text" id="login-username" value="admin" required class="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition">
+        </div>
+
+        <div>
+          <label for="login-password" class="block text-xs font-semibold text-slate-700 mb-1">Contraseña</label>
+          <input type="password" id="login-password" value="admin123" required class="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition">
+        </div>
+
+        <div class="p-2.5 rounded-lg bg-indigo-50 border border-indigo-100 text-[11px] text-indigo-700">
+          <i class="fa-solid fa-circle-info mr-1"></i> Credenciales predeterminadas: <strong>admin</strong> / <strong>admin123</strong>
+        </div>
+
+        <div class="pt-2 flex justify-end gap-2">
+          <button type="button" id="btn-cancelar-login" class="px-3.5 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg transition">Cancelar</button>
+          <button type="submit" class="px-4 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-xs transition flex items-center gap-1.5">
+            <i class="fa-solid fa-arrow-right-to-bracket"></i> Acceder
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- CONTENEDOR FLOTANTE DE NOTIFICACIONES (TOASTS)                            -->
+  <!-- ========================================================================= -->
+  <div id="toast-container" class="fixed bottom-5 right-5 z-50 space-y-2 max-w-sm pointer-events-none"></div>
+
+  <!-- ========================================================================= -->
+  <!-- LÓGICA JAVASCRIPT: CRUD COMPLETO + SOCKET.IO + SESIÓN                     -->
+  <!-- ========================================================================= -->
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    // Variables de Estado
+    let listaProductos = [];
+    let usuarioSesion = null;
+
+    // Elementos DOM
+    const socketBadge = document.getElementById('socket-badge');
+    const socketIdLabel = document.getElementById('socket-id-label');
+    const eventosFeed = document.getElementById('eventos-feed');
+    const tablaBody = document.getElementById('tabla-body');
+    const badgeContadorTabla = document.getElementById('badge-contador-tabla');
+
+    // Métricas
+    const statTotalProductos = document.getElementById('stat-total-productos');
+    const statTotalUnidades = document.getElementById('stat-total-unidades');
+    const statValorTotal = document.getElementById('stat-valor-total');
+    const statStockBajo = document.getElementById('stat-stock-bajo');
+
+    // Filtros
+    const inputBusqueda = document.getElementById('input-busqueda');
+    const selectCategoria = document.getElementById('select-categoria');
+    const btnRecargarTabla = document.getElementById('btn-recargar-tabla');
+
+    // Modales
+    const modalProducto = document.getElementById('modal-producto');
+    const modalTitulo = document.getElementById('modal-titulo');
+    const formProducto = document.getElementById('form-producto');
+    const modalAlertaError = document.getElementById('modal-alerta-error');
+    const btnNuevoProducto = document.getElementById('btn-nuevo-producto');
+    const btnCerrarModalProducto = document.getElementById('btn-cerrar-modal-producto');
+    const btnCancelarProducto = document.getElementById('btn-cancelar-producto');
+
+    // Modal Login
+    const modalLogin = document.getElementById('modal-login');
+    const formLogin = document.getElementById('form-login');
+    const loginError = document.getElementById('login-error');
+    const btnOpenLogin = document.getElementById('btn-open-login');
+    const btnCerrarModalLogin = document.getElementById('btn-cerrar-modal-login');
+    const btnCancelarLogin = document.getElementById('btn-cancelar-login');
+    const authContainer = document.getElementById('auth-container');
+
+    // -------------------------------------------------------------------------
+    // 1. INICIALIZACIÓN DE SOCKET.IO
+    // -------------------------------------------------------------------------
+    const socket = io();
+
+    socket.on('connect', () => {
+      socketBadge.className = 'px-2.5 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200';
+      socketBadge.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-500"></span> Conectado en Vivo';
+      socketIdLabel.textContent = `Socket ID: ${socket.id.slice(0, 8)}...`;
+      agregarEventoAlFeed('sistema:bienvenida', { mensaje: 'Enlace WebSocket sincronizado con éxito.' }, 'indigo');
+    });
+
+    socket.on('disconnect', () => {
+      socketBadge.className = 'px-2.5 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 bg-rose-50 text-rose-700 border border-rose-200';
+      socketBadge.innerHTML = '<span class="w-2 h-2 rounded-full bg-rose-500"></span> Desconectado';
+      socketIdLabel.textContent = 'Sin conexión';
+    });
+
+    // Eventos transmitidos por el servidor
+    socket.on('producto:creado', (producto) => {
+      agregarEventoAlFeed('producto:creado', producto, 'emerald');
+      mostrarToast(`Producto "${producto.nombre}" creado exitosamente`, 'success');
+      cargarProductos();
+    });
+
+    socket.on('producto:actualizado', (producto) => {
+      agregarEventoAlFeed('producto:actualizado', producto, 'sky');
+      mostrarToast(`Producto "${producto.nombre}" actualizado`, 'info');
+      cargarProductos();
+    });
+
+    socket.on('producto:eliminado', (data) => {
+      agregarEventoAlFeed('producto:eliminado', data, 'amber');
+      mostrarToast(`Producto "${data.nombre || data.sku}" eliminado`, 'warning');
+      cargarProductos();
+    });
+
+    socket.on('alerta:stock_bajo', (alerta) => {
+      agregarEventoAlFeed('alerta:stock_bajo', alerta, 'rose', true);
+      mostrarToast(`⚠️ ALERTA: ${alerta.mensaje}`, 'danger');
+    });
+
+    // -------------------------------------------------------------------------
+    // 2. GESTIÓN DE SESIÓN Y AUTENTICACIÓN TRANSPARENTE
+    // -------------------------------------------------------------------------
+    async function verificarSesionActual() {
+      try {
+        const resp = await fetch('/api/auth/me', { credentials: 'include' });
+        const json = await resp.json();
+
+        if (json.ok && json.data) {
+          usuarioSesion = json.data;
+          renderBarraSesion(true);
+        } else {
+          // Auto-login transparente como administrador para permitir uso libre inmediato
+          await autoLoginSilencioso();
+        }
+      } catch {
+        await autoLoginSilencioso();
+      }
+    }
+
+    async function autoLoginSilencioso() {
+      try {
+        const resp = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ username: 'admin', password: 'admin123' })
+        });
+        const json = await resp.json();
+        if (json.ok) {
+          usuarioSesion = json.data;
+          renderBarraSesion(true);
+        } else {
+          usuarioSesion = null;
+          renderBarraSesion(false);
+        }
+      } catch {
+        usuarioSesion = null;
+        renderBarraSesion(false);
+      }
+    }
+
+    function renderBarraSesion(autenticado) {
+      if (autenticado && usuarioSesion) {
+        authContainer.innerHTML = `
+          <div class="flex items-center gap-2">
+            <div class="text-right hidden sm:block leading-tight">
+              <span class="block text-xs font-bold text-slate-800">${usuarioSesion.nombre || usuarioSesion.username}</span>
+              <span class="block text-[10px] text-slate-500 capitalize">${usuarioSesion.rol}</span>
+            </div>
+            <button id="btn-logout" title="Cerrar Sesión" class="px-2.5 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition flex items-center gap-1 cursor-pointer">
+              <i class="fa-solid fa-arrow-right-from-bracket"></i> <span class="hidden sm:inline">Salir</span>
+            </button>
+          </div>
+        `;
+        document.getElementById('btn-logout').addEventListener('click', cerrarSesion);
+      } else {
+        authContainer.innerHTML = `
+          <button id="btn-open-login" class="px-3.5 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-xs transition flex items-center gap-1.5 cursor-pointer">
+            <i class="fa-solid fa-right-to-bracket"></i> Iniciar Sesión
+          </button>
+        `;
+        document.getElementById('btn-open-login').addEventListener('click', abrirModalLogin);
+      }
+    }
+
+    async function iniciarSesion(e) {
+      e.preventDefault();
+      loginError.classList.add('hidden');
+
+      const username = document.getElementById('login-username').value.trim();
+      const password = document.getElementById('login-password').value.trim();
+
+      try {
+        const resp = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ username, password })
+        });
+
+        const json = await resp.json();
+
+        if (json.ok) {
+          usuarioSesion = json.data;
+          renderBarraSesion(true);
+          cerrarModalLogin();
+          mostrarToast(`Bienvenido de nuevo, ${usuarioSesion.nombre}`, 'success');
+        } else {
+          loginError.textContent = json.error?.mensaje || 'Error al autenticar.';
+          loginError.classList.remove('hidden');
+        }
+      } catch (err) {
+        loginError.textContent = 'Error de conexión con el servidor.';
+        loginError.classList.remove('hidden');
+      }
+    }
+
+    async function cerrarSesion() {
+      try {
+        await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+        usuarioSesion = null;
+        renderBarraSesion(false);
+        mostrarToast('Sesión finalizada correctamente.', 'info');
+      } catch (err) {
+        console.error('Error cerrando sesión:', err);
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // 3. OPERACIONES CRUD CON LA API REST
+    // -------------------------------------------------------------------------
+    async function cargarProductos() {
+      try {
+        const busqueda = inputBusqueda.value.trim();
+        const categoria = selectCategoria.value;
+
+        const params = new URLSearchParams();
+        if (busqueda) params.append('busqueda', busqueda);
+        if (categoria) params.append('categoria', categoria);
+
+        const url = `/api/productos${params.toString() ? '?' + params.toString() : ''}`;
+        const resp = await fetch(url, { credentials: 'include' });
+        const json = await resp.json();
+
+        if (json.ok && Array.isArray(json.data)) {
+          listaProductos = json.data;
+          renderTabla(listaProductos);
+          actualizarCategoriasFiltro(listaProductos);
+
+          if (json.meta && json.meta.metricas) {
+            actualizarMetricas(json.meta.metricas);
+          }
+        }
+      } catch (err) {
+        console.error('Error al cargar productos:', err);
+      }
+    }
+
+    function renderTabla(productos) {
+      badgeContadorTabla.textContent = `${productos.length} registros`;
+
+      if (productos.length === 0) {
+        tablaBody.innerHTML = `
+          <tr>
+            <td colspan="7" class="text-center py-12 text-slate-400">
+              <div class="w-12 h-12 mx-auto mb-2 rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
+                <i class="fa-solid fa-box-open text-xl"></i>
+              </div>
+              <p class="font-medium">No se encontraron productos en el inventario.</p>
+              <p class="text-[11px] text-slate-400 mt-1">Haz clic en "+ Nuevo Producto" para registrar el primero.</p>
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      tablaBody.innerHTML = productos.map((p) => {
+        const estado = p.calculos?.estadoStock || (p.stock <= 5 ? 'BAJO' : 'OPTIMO');
+        const badgeColor = {
+          OPTIMO: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+          BAJO: 'bg-amber-50 text-amber-700 border-amber-200',
+          CRITICO: 'bg-rose-50 text-rose-700 border-rose-200',
+          AGOTADO: 'bg-slate-100 text-slate-500 border-slate-200'
+        }[estado] || 'bg-slate-100 text-slate-600 border-slate-200';
+
+        return `
+          <tr class="hover:bg-indigo-50/30 transition group">
+            <td class="py-3 px-4 font-mono font-bold text-indigo-600">${p.sku}</td>
+            <td class="py-3 px-4">
+              <span class="font-bold text-slate-900 block">${p.nombre}</span>
+              ${p.descripcion ? `<span class="text-[11px] text-slate-400 truncate block max-w-xs">${p.descripcion}</span>` : ''}
+            </td>
+            <td class="py-3 px-4">
+              <span class="inline-block px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[11px] font-medium border border-slate-200">
+                ${p.categoria}
+              </span>
+            </td>
+            <td class="py-3 px-4 text-right font-mono font-semibold text-slate-900">
+              $${Number(p.precio).toFixed(2)}
+            </td>
+            <td class="py-3 px-4 text-center">
+              <span class="font-mono font-bold ${p.stock <= 5 ? 'text-rose-600 bg-rose-50 px-2 py-0.5 rounded' : 'text-slate-800'}">
+                ${p.stock}
+              </span>
+            </td>
+            <td class="py-3 px-4 text-center">
+              <span class="px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${badgeColor}">
+                ${estado}
+              </span>
+            </td>
+            <td class="py-3 px-4 text-center">
+              <div class="flex items-center justify-center gap-1.5">
+                <button onclick="abrirModalEditar(${p.id})" title="Editar producto" class="w-7 h-7 rounded-md bg-slate-100 hover:bg-indigo-100 hover:text-indigo-700 text-slate-600 flex items-center justify-center transition cursor-pointer">
+                  <i class="fa-solid fa-pen-to-square text-xs"></i>
+                </button>
+                <button onclick="eliminarProducto(${p.id}, '${p.nombre.replace(/'/g, "\\'")}')" title="Eliminar producto" class="w-7 h-7 rounded-md bg-slate-100 hover:bg-rose-100 hover:text-rose-700 text-slate-600 flex items-center justify-center transition cursor-pointer">
+                  <i class="fa-solid fa-trash-can text-xs"></i>
+                </button>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function actualizarMetricas(m) {
+      statTotalProductos.textContent = m.totalProductos ?? 0;
+      statTotalUnidades.textContent = m.totalUnidades ?? 0;
+      statValorTotal.textContent = `$${(m.valorTotalInventario ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+      statStockBajo.textContent = m.productosConStockBajo ?? 0;
+    }
+
+    function actualizarCategoriasFiltro(productos) {
+      const categorias = [...new Set(productos.map(p => p.categoria).filter(Boolean))].sort();
+      const actual = selectCategoria.value;
+
+      selectCategoria.innerHTML = '<option value="">Todas las categorías</option>' + 
+        categorias.map(cat => `<option value="${cat}" ${cat === actual ? 'selected' : ''}>${cat}</option>`).join('');
+    }
+
+    // -------------------------------------------------------------------------
+    // 4. GUARDAR (CREAR / EDITAR) Y ELIMINAR LIBREMENTE
+    // -------------------------------------------------------------------------
+    async function asegurarSesion() {
+      if (!usuarioSesion) {
+        await autoLoginSilencioso();
+      }
+      return Boolean(usuarioSesion);
+    }
+
+    async function guardarProducto(e) {
+      e.preventDefault();
+      modalAlertaError.classList.add('hidden');
+
+      await asegurarSesion();
+
+      const id = document.getElementById('prod-id').value;
+      const skuInput = document.getElementById('prod-sku').value.trim() || `PRD-${Date.now().toString().slice(-4)}`;
+      const payload = {
+        sku: skuInput,
+        nombre: document.getElementById('prod-nombre').value.trim(),
+        categoria: document.getElementById('prod-categoria').value.trim() || 'General',
+        precio: parseFloat(document.getElementById('prod-precio').value) || 0,
+        stock: parseInt(document.getElementById('prod-stock').value, 10) || 0,
+        descripcion: document.getElementById('prod-descripcion').value.trim()
+      };
+
+      const esEdicion = Boolean(id);
+      const url = esEdicion ? `/api/productos/${id}` : '/api/productos';
+      const method = esEdicion ? 'PUT' : 'POST';
+
+      try {
+        let resp = await fetch(url, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify(payload)
+        });
+
+        // Si dio 401 por expiración, reintentar tras auto-login transparente
+        if (resp.status === 401) {
+          await autoLoginSilencioso();
+          resp = await fetch(url, {
+            method,
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify(payload)
+          });
+        }
+
+        const json = await resp.json();
+
+        if (json.ok) {
+          cerrarModalProducto();
+          cargarProductos();
+        } else {
+          // Mostrar mensaje de error devuelto por la API (400 Zod o 409 SKU Duplicado)
+          let mensaje = json.error?.mensaje || 'Error al procesar la solicitud.';
+          if (json.error?.detalles?.length) {
+            mensaje += ' ' + json.error.detalles.map(d => `${d.campo}: ${d.mensaje}`).join(', ');
+          }
+          modalAlertaError.textContent = mensaje;
+          modalAlertaError.classList.remove('hidden');
+        }
+      } catch (err) {
+        modalAlertaError.textContent = 'Error de red al conectar con la API.';
+        modalAlertaError.classList.remove('hidden');
+      }
+    }
+
+    async function eliminarProducto(id, nombre) {
+      await asegurarSesion();
+
+      if (!confirm(`¿Estás seguro de que deseas eliminar permanentemente el producto "${nombre}" (ID: ${id})?`)) {
+        return;
+      }
+
+      try {
+        let resp = await fetch(`/api/productos/${id}`, {
+          method: 'DELETE',
+          credentials: 'include'
+        });
+
+        if (resp.status === 401) {
+          await autoLoginSilencioso();
+          resp = await fetch(`/api/productos/${id}`, {
+            method: 'DELETE',
+            credentials: 'include'
+          });
+        }
+
+        const json = await resp.json();
+        if (!json.ok) {
+          mostrarToast(json.error?.mensaje || 'Error al eliminar.', 'danger');
+        }
+      } catch (err) {
+        mostrarToast('Error al procesar la eliminación.', 'danger');
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // 5. CONTROL DE MODALES
+    // -------------------------------------------------------------------------
+    function generarSkuAleatorio() {
+      return `PRD-${Date.now().toString().slice(-4)}`;
+    }
+
+    async function abrirModalNuevo() {
+      await asegurarSesion();
+
+      modalTitulo.textContent = 'Registrar Nuevo Producto';
+      document.getElementById('prod-id').value = '';
+      formProducto.reset();
+      
+      // Valores sugeridos por defecto para agilizar la adición inmediata
+      document.getElementById('prod-sku').value = generarSkuAleatorio();
+      document.getElementById('prod-categoria').value = 'General';
+      document.getElementById('prod-precio').value = '19.99';
+      document.getElementById('prod-stock').value = '10';
+
+      modalAlertaError.classList.add('hidden');
+      modalProducto.classList.remove('hidden');
+      modalProducto.classList.add('flex');
+      document.getElementById('prod-nombre').focus();
+    }
+
+    window.abrirModalEditar = async function(id) {
+      await asegurarSesion();
+
+      const producto = listaProductos.find(p => p.id === id);
+      if (!producto) return;
+
+      modalTitulo.textContent = `Editar Producto: ${producto.nombre}`;
+      document.getElementById('prod-id').value = producto.id;
+      document.getElementById('prod-sku').value = producto.sku;
+      document.getElementById('prod-nombre').value = producto.nombre;
+      document.getElementById('prod-categoria').value = producto.categoria;
+      document.getElementById('prod-precio').value = producto.precio;
+      document.getElementById('prod-stock').value = producto.stock;
+      document.getElementById('prod-descripcion').value = producto.descripcion || '';
+      
+      modalAlertaError.classList.add('hidden');
+      modalProducto.classList.remove('hidden');
+      modalProducto.classList.add('flex');
+    };
+
+    function cerrarModalProducto() {
+      modalProducto.classList.add('hidden');
+      modalProducto.classList.remove('flex');
+    }
+
+    function abrirModalLogin() {
+      loginError.classList.add('hidden');
+      modalLogin.classList.remove('hidden');
+      modalLogin.classList.add('flex');
+    }
+
+    function cerrarModalLogin() {
+      modalLogin.classList.add('hidden');
+      modalLogin.classList.remove('flex');
+    }
+
+    // -------------------------------------------------------------------------
+    // 6. FEED DE EVENTOS Y NOTIFICACIONES TOAST
+    // -------------------------------------------------------------------------
+    function agregarEventoAlFeed(nombreEvento, data, color, esCritico = false) {
+      const hora = new Date().toLocaleTimeString();
+      const badgeColor = {
+        emerald: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+        sky: 'bg-sky-50 text-sky-700 border-sky-200',
+        amber: 'bg-amber-50 text-amber-700 border-amber-200',
+        rose: 'bg-rose-50 text-rose-700 border-rose-200',
+        indigo: 'bg-indigo-50 text-indigo-700 border-indigo-200'
+      }[color] || 'bg-slate-100 text-slate-700 border-slate-200';
+
+      const item = document.createElement('div');
+      item.className = `p-3 rounded-xl bg-white border ${esCritico ? 'border-rose-300 shadow-xs alerta-subtle' : 'border-slate-200 shadow-2xs'} transition text-xs fade-in`;
+
+      item.innerHTML = `
+        <div class="flex items-center justify-between mb-1">
+          <span class="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase border ${badgeColor}">
+            ${nombreEvento}
+          </span>
+          <span class="text-[10px] text-slate-400 font-mono">${hora}</span>
+        </div>
+        <p class="text-xs text-slate-700 leading-relaxed font-sans">
+          ${data.nombre ? `<strong class="text-slate-900">${data.nombre}</strong> <span class="font-mono text-slate-400">(${data.sku})</span>` : ''}
+          ${data.stock !== undefined ? `<br><span class="text-slate-500">Stock:</span> <strong class="text-slate-900">${data.stock}</strong> &middot; <span class="text-slate-500">Precio:</span> $${Number(data.precio || 0).toFixed(2)}` : ''}
+          ${data.mensaje ? `<span class="block mt-0.5 text-rose-600 font-semibold">${data.mensaje}</span>` : ''}
+        </p>
+      `;
+
+      if (eventosFeed.firstElementChild && eventosFeed.firstElementChild.textContent.includes('Esperando')) {
+        eventosFeed.innerHTML = '';
+      }
+      eventosFeed.insertBefore(item, eventosFeed.firstChild);
+    }
+
+    function mostrarToast(mensaje, tipo = 'info') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+
+      const estilos = {
+        success: 'bg-emerald-600 text-white',
+        info: 'bg-slate-900 text-white',
+        warning: 'bg-amber-500 text-white',
+        danger: 'bg-rose-600 text-white'
+      }[tipo] || 'bg-slate-800 text-white';
+
+      toast.className = `pointer-events-auto px-4 py-2.5 rounded-xl shadow-lg text-xs font-medium flex items-center gap-2 ${estilos} fade-in`;
+      toast.innerHTML = `
+        <span>${mensaje}</span>
+      `;
+
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transition = 'opacity 0.3s ease';
+        setTimeout(() => toast.remove(), 300);
+      }, 3500);
+    }
+
+    // -------------------------------------------------------------------------
+    // 7. EVENT LISTENERS
+    // -------------------------------------------------------------------------
+    btnNuevoProducto.addEventListener('click', abrirModalNuevo);
+    btnCerrarModalProducto.addEventListener('click', cerrarModalProducto);
+    btnCancelarProducto.addEventListener('click', cerrarModalProducto);
+    formProducto.addEventListener('submit', guardarProducto);
+
+    btnCerrarModalLogin.addEventListener('click', cerrarModalLogin);
+    btnCancelarLogin.addEventListener('click', cerrarModalLogin);
+    formLogin.addEventListener('submit', iniciarSesion);
+
+    inputBusqueda.addEventListener('input', () => {
+      clearTimeout(window.searchTimeout);
+      window.searchTimeout = setTimeout(cargarProductos, 250);
+    });
+
+    selectCategoria.addEventListener('change', cargarProductos);
+    btnRecargarTabla.addEventListener('click', cargarProductos);
+
+    document.getElementById('btn-limpiar-feed').addEventListener('click', () => {
+      eventosFeed.innerHTML = '<div class="p-3 rounded-lg bg-slate-50 border border-slate-200 text-slate-400 text-center text-xs">Feed limpio. Esperando nuevos eventos...</div>';
+    });
+
+    // Carga inicial
+    verificarSesionActual();
+    cargarProductos();
+  </script>
+</body>
+</html>
